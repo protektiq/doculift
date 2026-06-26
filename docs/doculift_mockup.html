@@ -1,0 +1,1819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DocuLift — Document Digitization</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --paper:     #F7F6F3;
+    --paper-2:   #EFEDE8;
+    --paper-3:   #E4E1D9;
+    --chrome:    #1C2333;
+    --chrome-2:  #263044;
+    --chrome-3:  #34435C;
+    --chrome-4:  #4A5E7A;
+    --amber:     #E8A020;
+    --amber-dim: #C4871A;
+    --amber-bg:  #FDF3DC;
+    --sage:      #4A6741;
+    --sage-bg:   #EBF2EA;
+    --red:       #C0392B;
+    --red-bg:    #FDECEA;
+    --blue-dim:  #7B9FC7;
+    --text-main: #1C2333;
+    --text-sub:  #5A6580;
+    --text-dim:  #8A95A8;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Inter', sans-serif;
+    --radius: 6px;
+    --radius-lg: 10px;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--chrome);
+    font-family: var(--sans);
+    color: var(--text-main);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── APP SHELL ─────────────────────────────────────────────────────── */
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    max-width: 1400px;
+    margin: 0 auto;
+    background: var(--chrome);
+  }
+
+  /* ── TOP BAR ───────────────────────────────────────────────────────── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 48px;
+    padding: 0 16px;
+    background: var(--chrome);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    flex-shrink: 0;
+    gap: 16px;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+  }
+
+  .logo-mark {
+    width: 26px;
+    height: 26px;
+    background: var(--amber);
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .logo-mark svg { width: 14px; height: 14px; }
+
+  .logo-name {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 15px;
+    color: #fff;
+    letter-spacing: -0.3px;
+  }
+
+  .topbar-nav {
+    display: flex;
+    gap: 2px;
+  }
+
+  .nav-btn {
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--blue-dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 5px 10px;
+    border-radius: var(--radius);
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .nav-btn:hover { color: #fff; background: rgba(255,255,255,0.07); }
+  .nav-btn.active { color: #fff; background: rgba(255,255,255,0.1); }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* The signature element: local processing trust indicator */
+  .trust-pill {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(232, 160, 32, 0.12);
+    border: 1px solid rgba(232, 160, 32, 0.3);
+    border-radius: 20px;
+    padding: 4px 10px 4px 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--amber);
+    letter-spacing: 0.2px;
+  }
+
+  .trust-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--amber);
+    animation: pulse 2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+
+  .tier-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--chrome-4);
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 4px;
+    padding: 3px 7px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--chrome-3);
+    border: 1px solid rgba(255,255,255,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--blue-dim);
+    cursor: pointer;
+  }
+
+  /* ── MAIN BODY ─────────────────────────────────────────────────────── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── LEFT SIDEBAR: QUEUE ───────────────────────────────────────────── */
+  .sidebar-left {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--chrome-2);
+    border-right: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 14px 10px;
+  }
+
+  .sidebar-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--chrome-4);
+  }
+
+  .sidebar-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--chrome-4);
+    background: rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 1px 7px;
+  }
+
+  .queue-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 8px 8px;
+  }
+
+  .queue-list::-webkit-scrollbar { width: 3px; }
+  .queue-list::-webkit-scrollbar-track { background: transparent; }
+  .queue-list::-webkit-scrollbar-thumb { background: var(--chrome-3); border-radius: 2px; }
+
+  .queue-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 9px 8px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.12s;
+    position: relative;
+  }
+
+  .queue-item:hover { background: rgba(255,255,255,0.04); }
+  .queue-item.active { background: rgba(255,255,255,0.08); }
+  .queue-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 8px; bottom: 8px;
+    width: 2px;
+    background: var(--amber);
+    border-radius: 2px;
+  }
+
+  .queue-icon {
+    width: 28px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    margin-top: 1px;
+  }
+
+  .queue-icon.pdf { background: rgba(192,57,43,0.15); }
+  .queue-icon.img { background: rgba(74,103,65,0.2); }
+  .queue-icon.tiff { background: rgba(123,159,199,0.15); }
+
+  .queue-icon-label {
+    font-family: var(--mono);
+    font-size: 7px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .queue-icon.pdf .queue-icon-label { color: #E57373; }
+  .queue-icon.img .queue-icon-label { color: #81C784; }
+  .queue-icon.tiff .queue-icon-label { color: var(--blue-dim); }
+
+  .queue-info { flex: 1; min-width: 0; }
+
+  .queue-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: #C8D0DE;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 3px;
+  }
+
+  .queue-meta {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--chrome-4);
+  }
+
+  .queue-status {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+  .status-dot.done { background: var(--sage); }
+  .status-dot.processing { background: var(--amber); animation: pulse 1.5s ease-in-out infinite; }
+  .status-dot.waiting { background: var(--chrome-3); }
+
+  .queue-progress-bar {
+    height: 2px;
+    background: var(--chrome-3);
+    border-radius: 2px;
+    margin-top: 5px;
+    overflow: hidden;
+  }
+
+  .queue-progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--amber);
+    transition: width 0.3s ease;
+  }
+
+  .sidebar-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.06);
+    margin: 8px 14px;
+  }
+
+  .sidebar-stats {
+    padding: 10px 14px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--chrome-4);
+  }
+
+  .stat-val {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: #8A95A8;
+  }
+
+  .usage-bar {
+    height: 3px;
+    background: var(--chrome-3);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 2px;
+  }
+
+  .usage-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--amber);
+  }
+
+  /* ── CENTER: CANVAS ────────────────────────────────────────────────── */
+  .canvas {
+    flex: 1;
+    background: var(--paper);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .canvas-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--paper-3);
+    flex-shrink: 0;
+  }
+
+  .canvas-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .breadcrumb {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-sub);
+  }
+
+  .breadcrumb span {
+    color: var(--text-main);
+    font-weight: 500;
+  }
+
+  .canvas-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .toolbar-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-sub);
+    background: #fff;
+    border: 1px solid var(--paper-3);
+    border-radius: var(--radius);
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+
+  .toolbar-btn:hover { border-color: var(--paper-3); background: var(--paper-2); color: var(--text-main); }
+
+  .toolbar-btn.primary {
+    background: var(--chrome);
+    border-color: var(--chrome);
+    color: #fff;
+  }
+
+  .toolbar-btn.primary:hover { background: var(--chrome-2); }
+
+  .toolbar-btn svg { width: 13px; height: 13px; }
+
+  /* Drop zone */
+  .drop-zone-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    gap: 16px;
+    overflow-y: auto;
+  }
+
+  .drop-zone {
+    border: 2px dashed var(--paper-3);
+    border-radius: var(--radius-lg);
+    padding: 28px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: #fff;
+    transition: all 0.2s;
+    cursor: pointer;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .drop-zone:hover {
+    border-color: var(--amber);
+    background: var(--amber-bg);
+  }
+
+  .drop-icon {
+    width: 40px;
+    height: 40px;
+    background: var(--paper-2);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .drop-icon svg { width: 20px; height: 20px; color: var(--text-sub); }
+
+  .drop-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-main);
+  }
+
+  .drop-sub {
+    font-size: 12px;
+    color: var(--text-sub);
+    font-family: var(--mono);
+  }
+
+  /* Active processing document display */
+  .doc-viewer {
+    background: #fff;
+    border: 1px solid var(--paper-3);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .doc-viewer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--paper-3);
+  }
+
+  .doc-viewer-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .doc-type-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: rgba(192,57,43,0.1);
+    color: #C0392B;
+  }
+
+  .doc-filename {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-main);
+  }
+
+  .doc-viewer-meta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .doc-meta-item {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-sub);
+  }
+
+  .doc-meta-item strong { color: var(--text-main); }
+
+  .doc-body {
+    display: flex;
+    min-height: 280px;
+  }
+
+  .doc-pages {
+    width: 80px;
+    background: var(--paper-2);
+    border-right: 1px solid var(--paper-3);
+    padding: 10px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+  }
+
+  .page-thumb {
+    width: 68px;
+    height: 88px;
+    border-radius: 3px;
+    border: 1.5px solid transparent;
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: border-color 0.12s;
+    overflow: hidden;
+  }
+
+  .page-thumb.active { border-color: var(--amber); }
+  .page-thumb.done { border-color: var(--paper-3); }
+  .page-thumb.processing { border-color: var(--amber); }
+
+  .page-thumb-lines {
+    width: 44px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 4px;
+  }
+
+  .page-line {
+    height: 2px;
+    border-radius: 1px;
+    background: var(--paper-3);
+  }
+
+  .page-line:nth-child(1) { width: 44px; }
+  .page-line:nth-child(2) { width: 36px; }
+  .page-line:nth-child(3) { width: 44px; }
+  .page-line:nth-child(4) { width: 28px; }
+  .page-line:nth-child(5) { width: 44px; }
+  .page-line:nth-child(6) { width: 40px; }
+  .page-line:nth-child(7) { width: 44px; }
+  .page-line:nth-child(8) { width: 32px; }
+
+  .page-num {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    position: absolute;
+    bottom: 4px;
+  }
+
+  .page-status-overlay {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .page-status-overlay.done { background: var(--sage); }
+  .page-status-overlay.processing { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+
+  .page-status-overlay svg { width: 7px; height: 7px; color: #fff; }
+
+  .doc-ocr-panel {
+    flex: 1;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+  }
+
+  .ocr-progress-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .ocr-progress-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .ocr-status-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+  }
+
+  .processing-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--paper-3);
+    border-top-color: var(--amber);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .ocr-pct {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--amber);
+  }
+
+  .main-progress-bar {
+    height: 5px;
+    background: var(--paper-2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .main-progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--amber-dim), var(--amber));
+    width: 62%;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .main-progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%; right: 0; bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+  }
+
+  .page-progress-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+  }
+
+  .page-progress-cell {
+    height: 22px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+  }
+
+  .page-progress-cell.done { background: var(--sage-bg); color: var(--sage); }
+  .page-progress-cell.active { background: var(--amber-bg); color: var(--amber-dim); }
+  .page-progress-cell.waiting { background: var(--paper-2); color: var(--text-dim); }
+
+  .confidence-section { display: flex; flex-direction: column; gap: 6px; }
+
+  .confidence-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-sub);
+  }
+
+  .confidence-bars { display: flex; flex-direction: column; gap: 5px; }
+
+  .conf-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .conf-page {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    width: 36px;
+    flex-shrink: 0;
+  }
+
+  .conf-bar-wrap {
+    flex: 1;
+    height: 6px;
+    background: var(--paper-2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .conf-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+  }
+  .conf-bar-fill.high { background: var(--sage); }
+  .conf-bar-fill.med { background: var(--amber); }
+  .conf-bar-fill.low { background: var(--red); }
+
+  .conf-pct {
+    font-family: var(--mono);
+    font-size: 10px;
+    width: 30px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .conf-pct.high { color: var(--sage); }
+  .conf-pct.med { color: var(--amber-dim); }
+  .conf-pct.low { color: var(--red); }
+
+  .ocr-text-preview {
+    background: var(--paper);
+    border: 1px solid var(--paper-3);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--text-sub);
+    max-height: 120px;
+    overflow-y: auto;
+    position: relative;
+  }
+
+  .ocr-text-preview::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 30px;
+    background: linear-gradient(transparent, var(--paper));
+    border-radius: 0 0 var(--radius) var(--radius);
+    pointer-events: none;
+  }
+
+  .ocr-text-preview em { color: var(--amber-dim); font-style: normal; background: var(--amber-bg); padding: 0 2px; border-radius: 2px; }
+
+  /* ── RIGHT SIDEBAR: OUTPUT & CLAUDE ────────────────────────────────── */
+  .sidebar-right {
+    width: 280px;
+    flex-shrink: 0;
+    background: var(--paper);
+    border-left: 1px solid var(--paper-3);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .right-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--paper-3);
+    flex-shrink: 0;
+  }
+
+  .right-tab {
+    flex: 1;
+    padding: 10px 0;
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-sub);
+    background: none;
+    border: none;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.12s;
+    text-align: center;
+  }
+
+  .right-tab.active { color: var(--text-main); border-bottom-color: var(--amber); }
+  .right-tab:hover:not(.active) { color: var(--text-main); background: var(--paper-2); }
+
+  .right-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .right-content::-webkit-scrollbar { width: 3px; }
+  .right-content::-webkit-scrollbar-thumb { background: var(--paper-3); border-radius: 2px; }
+
+  /* Export panel */
+  .export-section { display: flex; flex-direction: column; gap: 8px; }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-sub);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 2px;
+  }
+
+  .format-options { display: flex; flex-direction: column; gap: 5px; }
+
+  .format-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 11px;
+    border-radius: var(--radius);
+    border: 1.5px solid var(--paper-3);
+    background: #fff;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+
+  .format-option:hover { border-color: var(--amber); background: var(--amber-bg); }
+  .format-option.selected { border-color: var(--amber); background: var(--amber-bg); }
+
+  .format-option-left {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .format-icon {
+    width: 26px;
+    height: 30px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+
+  .format-icon.pdf { background: rgba(192,57,43,0.1); color: var(--red); }
+  .format-icon.docx { background: rgba(37,99,235,0.1); color: #2563EB; }
+  .format-icon.txt { background: var(--paper-2); color: var(--text-sub); }
+  .format-icon.csv { background: rgba(74,103,65,0.1); color: var(--sage); }
+
+  .format-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-main);
+  }
+
+  .format-desc {
+    font-size: 10px;
+    color: var(--text-sub);
+    font-family: var(--mono);
+    margin-top: 1px;
+  }
+
+  .format-tier {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.3px;
+  }
+
+  .format-tier.free { background: var(--sage-bg); color: var(--sage); }
+  .format-tier.standard { background: var(--amber-bg); color: var(--amber-dim); }
+  .format-tier.locked { background: var(--paper-2); color: var(--text-dim); }
+
+  .export-btn {
+    width: 100%;
+    padding: 10px;
+    background: var(--chrome);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+  }
+
+  .export-btn:hover { background: var(--chrome-2); }
+  .export-btn svg { width: 14px; height: 14px; }
+
+  /* Claude panel */
+  .claude-section { display: flex; flex-direction: column; gap: 10px; }
+
+  .claude-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .claude-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+  }
+
+  .claude-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #6B5BDA, #B45FD4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .claude-tokens {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .claude-summary-box {
+    background: #fff;
+    border: 1px solid var(--paper-3);
+    border-radius: var(--radius);
+    padding: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .claude-summary-box::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, #6B5BDA, #B45FD4);
+  }
+
+  .claude-summary-text {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-main);
+    padding-left: 8px;
+  }
+
+  .claude-typing-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 13px;
+    background: #6B5BDA;
+    margin-left: 2px;
+    vertical-align: middle;
+    animation: blink 1s step-end infinite;
+  }
+
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .claude-actions { display: flex; flex-direction: column; gap: 5px; }
+
+  .claude-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: #fff;
+    border: 1px solid var(--paper-3);
+    border-radius: var(--radius);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all 0.12s;
+    text-align: left;
+  }
+
+  .claude-action-btn:hover { background: var(--paper-2); border-color: var(--paper-3); }
+
+  .claude-action-btn svg { width: 13px; height: 13px; color: var(--text-sub); flex-shrink: 0; }
+
+  .claude-action-btn .action-tier {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    background: var(--paper-2);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  .token-usage-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .token-bar-wrap {
+    flex: 1;
+    height: 4px;
+    background: var(--paper-2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .token-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6B5BDA, #B45FD4);
+    border-radius: 3px;
+  }
+
+  .token-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+
+  /* Completed document row */
+  .completed-doc {
+    background: #fff;
+    border: 1px solid var(--paper-3);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  .completed-doc-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--sage-bg);
+    border-bottom: 1px solid #D4E8D2;
+  }
+
+  .completed-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--sage);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .completed-icon svg { width: 10px; height: 10px; color: #fff; }
+
+  .completed-name {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--sage);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .completed-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .completed-action {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+
+  .completed-action.export {
+    background: var(--chrome);
+    border-color: var(--chrome);
+    color: #fff;
+  }
+
+  .completed-action.view {
+    background: transparent;
+    border-color: var(--sage);
+    color: var(--sage);
+  }
+
+  .completed-stats {
+    display: flex;
+    padding: 8px 14px;
+    gap: 16px;
+  }
+
+  .completed-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .completed-stat-val {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+  }
+
+  .completed-stat-key {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  /* Status bar */
+  .statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 26px;
+    padding: 0 16px;
+    background: var(--chrome-2);
+    border-top: 1px solid rgba(255,255,255,0.05);
+    flex-shrink: 0;
+  }
+
+  .statusbar-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--chrome-4);
+  }
+
+  .status-item-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+  }
+
+  .status-item-dot.green { background: var(--sage); }
+  .status-item-dot.amber { background: var(--amber); animation: pulse 1.5s ease-in-out infinite; }
+
+  /* Notification toast */
+  .toast {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--chrome);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius-lg);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    font-size: 13px;
+    color: #fff;
+    pointer-events: none;
+    animation: toastIn 0.3s ease;
+    z-index: 100;
+  }
+
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
+
+  .toast-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--sage);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .toast-icon svg { width: 10px; height: 10px; color: #fff; }
+  .toast-detail { font-family: var(--mono); font-size: 11px; color: var(--blue-dim); }
+
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <a class="logo" href="#">
+        <div class="logo-mark">
+          <svg viewBox="0 0 14 14" fill="none" stroke="#1C2333" stroke-width="2" stroke-linecap="round">
+            <rect x="2" y="1" width="8" height="11" rx="1"/>
+            <line x1="4" y1="4" x2="8" y2="4"/>
+            <line x1="4" y1="6.5" x2="8" y2="6.5"/>
+            <line x1="4" y1="9" x2="6.5" y2="9"/>
+            <polyline points="8.5,7.5 10.5,9.5 12.5,7" stroke="#1C2333"/>
+          </svg>
+        </div>
+        <span class="logo-name">DocuLift</span>
+      </a>
+      <nav class="topbar-nav">
+        <button class="nav-btn active">Process</button>
+        <button class="nav-btn">History</button>
+        <button class="nav-btn">Settings</button>
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <!-- THE SIGNATURE ELEMENT -->
+      <div class="trust-pill">
+        <div class="trust-dot"></div>
+        Processing locally · no network
+      </div>
+      <div class="tier-badge">Standard</div>
+      <div class="avatar">M</div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- LEFT SIDEBAR: QUEUE -->
+    <div class="sidebar-left">
+      <div class="sidebar-section-head">
+        <span class="sidebar-label">Queue</span>
+        <span class="sidebar-count">3</span>
+      </div>
+
+      <div class="queue-list">
+
+        <!-- Done -->
+        <div class="queue-item">
+          <div class="queue-icon pdf">
+            <span class="queue-icon-label">PDF</span>
+          </div>
+          <div class="queue-info">
+            <div class="queue-name">contract_2026.pdf</div>
+            <div class="queue-meta">14 pages · 2.3 MB</div>
+          </div>
+          <div class="queue-status">
+            <div class="status-dot done"></div>
+          </div>
+        </div>
+
+        <!-- Active -->
+        <div class="queue-item active">
+          <div class="queue-icon pdf">
+            <span class="queue-icon-label">PDF</span>
+          </div>
+          <div class="queue-info">
+            <div class="queue-name">tax_records_23.pdf</div>
+            <div class="queue-meta">8 pages · 1.1 MB</div>
+            <div class="queue-progress-bar">
+              <div class="queue-progress-fill" style="width:62%"></div>
+            </div>
+          </div>
+          <div class="queue-status">
+            <div class="status-dot processing"></div>
+          </div>
+        </div>
+
+        <!-- Waiting -->
+        <div class="queue-item">
+          <div class="queue-icon img">
+            <span class="queue-icon-label">JPG</span>
+          </div>
+          <div class="queue-info">
+            <div class="queue-name">receipt_batch_01.jpg</div>
+            <div class="queue-meta">1 page · 840 KB</div>
+          </div>
+          <div class="queue-status">
+            <div class="status-dot waiting"></div>
+          </div>
+        </div>
+
+        <div class="queue-item">
+          <div class="queue-icon tiff">
+            <span class="queue-icon-label">TIFF</span>
+          </div>
+          <div class="queue-info">
+            <div class="queue-name">archive_scan_07.tiff</div>
+            <div class="queue-meta">22 pages · 18.4 MB</div>
+          </div>
+          <div class="queue-status">
+            <div class="status-dot waiting"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <div class="sidebar-stats">
+        <div class="sidebar-label" style="margin-bottom:4px">This Month</div>
+
+        <div class="stat-row">
+          <span class="stat-label">Pages used</span>
+          <span class="stat-val">87 / 200</span>
+        </div>
+        <div class="usage-bar">
+          <div class="usage-fill" style="width:43.5%"></div>
+        </div>
+
+        <div class="stat-row" style="margin-top:6px">
+          <span class="stat-label">Claude requests</span>
+          <span class="stat-val">31 / 200</span>
+        </div>
+        <div class="usage-bar">
+          <div class="usage-fill" style="width:15.5%; background: linear-gradient(90deg, #6B5BDA, #B45FD4);"></div>
+        </div>
+
+        <div class="stat-row" style="margin-top:6px">
+          <span class="stat-label">Docs processed</span>
+          <span class="stat-val">12</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER CANVAS -->
+    <div class="canvas">
+
+      <div class="canvas-toolbar">
+        <div class="canvas-toolbar-left">
+          <span class="breadcrumb">Processing / <span>tax_records_23.pdf</span></span>
+        </div>
+        <div class="canvas-toolbar-right">
+          <button class="toolbar-btn">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><line x1="7" y1="5" x2="7" y2="7"/><circle cx="7" cy="9" r="0.5" fill="currentColor"/></svg>
+            OCR Settings
+          </button>
+          <button class="toolbar-btn">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="10" height="10" rx="1"/><line x1="5" y1="5" x2="9" y2="5"/><line x1="5" y1="7" x2="9" y2="7"/><line x1="5" y1="9" x2="7" y2="9"/></svg>
+            Preview Text
+          </button>
+          <button class="toolbar-btn" style="color: var(--red); border-color: rgba(192,57,43,0.2);">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="4" x2="10" y2="10"/><line x1="10" y1="4" x2="4" y2="10"/></svg>
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      <div class="drop-zone-wrapper">
+
+        <!-- Completed doc -->
+        <div class="completed-doc">
+          <div class="completed-doc-header">
+            <div class="completed-icon">
+              <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,5 4,7.5 8,3"/></svg>
+            </div>
+            <span class="completed-name">contract_2026.pdf</span>
+            <div class="completed-actions">
+              <button class="completed-action view">View</button>
+              <button class="completed-action export">Export</button>
+            </div>
+          </div>
+          <div class="completed-stats">
+            <div class="completed-stat">
+              <div class="completed-stat-val">14</div>
+              <div class="completed-stat-key">pages</div>
+            </div>
+            <div class="completed-stat">
+              <div class="completed-stat-val">97.2%</div>
+              <div class="completed-stat-key">avg confidence</div>
+            </div>
+            <div class="completed-stat">
+              <div class="completed-stat-val">4,821</div>
+              <div class="completed-stat-key">words extracted</div>
+            </div>
+            <div class="completed-stat">
+              <div class="completed-stat-val">3.1s</div>
+              <div class="completed-stat-key">processing time</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active document viewer -->
+        <div class="doc-viewer">
+          <div class="doc-viewer-header">
+            <div class="doc-viewer-title">
+              <span class="doc-type-tag">PDF</span>
+              <span class="doc-filename">tax_records_23.pdf</span>
+            </div>
+            <div class="doc-viewer-meta">
+              <span class="doc-meta-item">Page <strong>5</strong> of <strong>8</strong></span>
+              <span class="doc-meta-item">1.1 MB</span>
+            </div>
+          </div>
+
+          <div class="doc-body">
+
+            <!-- Page thumbnails -->
+            <div class="doc-pages">
+              <div class="page-thumb done">
+                <div class="page-thumb-lines">
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                </div>
+                <span class="page-num">p.1</span>
+                <div class="page-status-overlay done">
+                  <svg viewBox="0 0 7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,3.5 3,5 5.5,2"/></svg>
+                </div>
+              </div>
+              <div class="page-thumb done">
+                <div class="page-thumb-lines">
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                </div>
+                <span class="page-num">p.2</span>
+                <div class="page-status-overlay done">
+                  <svg viewBox="0 0 7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,3.5 3,5 5.5,2"/></svg>
+                </div>
+              </div>
+              <div class="page-thumb done">
+                <div class="page-thumb-lines">
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                </div>
+                <span class="page-num">p.3</span>
+                <div class="page-status-overlay done">
+                  <svg viewBox="0 0 7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,3.5 3,5 5.5,2"/></svg>
+                </div>
+              </div>
+              <div class="page-thumb done">
+                <div class="page-thumb-lines">
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                </div>
+                <span class="page-num">p.4</span>
+                <div class="page-status-overlay done">
+                  <svg viewBox="0 0 7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,3.5 3,5 5.5,2"/></svg>
+                </div>
+              </div>
+              <div class="page-thumb active processing">
+                <div class="page-thumb-lines">
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                </div>
+                <span class="page-num">p.5</span>
+                <div class="page-status-overlay processing"></div>
+              </div>
+              <div class="page-thumb">
+                <div class="page-thumb-lines">
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                </div>
+                <span class="page-num">p.6</span>
+              </div>
+              <div class="page-thumb">
+                <div class="page-thumb-lines">
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                </div>
+                <span class="page-num">p.7</span>
+              </div>
+              <div class="page-thumb">
+                <div class="page-thumb-lines">
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                  <div class="page-line"></div><div class="page-line"></div>
+                </div>
+                <span class="page-num">p.8</span>
+              </div>
+            </div>
+
+            <!-- OCR panel -->
+            <div class="doc-ocr-panel">
+
+              <div class="ocr-progress-section">
+                <div class="ocr-progress-header">
+                  <div class="ocr-status-label">
+                    <div class="processing-spinner"></div>
+                    Extracting text — page 5 of 8
+                  </div>
+                  <span class="ocr-pct">62%</span>
+                </div>
+                <div class="main-progress-bar">
+                  <div class="main-progress-fill"></div>
+                </div>
+              </div>
+
+              <div>
+                <div class="section-title" style="margin-bottom:6px">Page status</div>
+                <div class="page-progress-grid">
+                  <div class="page-progress-cell done">p.1 ✓</div>
+                  <div class="page-progress-cell done">p.2 ✓</div>
+                  <div class="page-progress-cell done">p.3 ✓</div>
+                  <div class="page-progress-cell done">p.4 ✓</div>
+                  <div class="page-progress-cell active">p.5 …</div>
+                  <div class="page-progress-cell waiting">p.6</div>
+                  <div class="page-progress-cell waiting">p.7</div>
+                  <div class="page-progress-cell waiting">p.8</div>
+                </div>
+              </div>
+
+              <div class="confidence-section">
+                <div class="section-title">OCR confidence — completed pages</div>
+                <div class="confidence-bars">
+                  <div class="conf-row">
+                    <span class="conf-page">p.1</span>
+                    <div class="conf-bar-wrap"><div class="conf-bar-fill high" style="width:98%"></div></div>
+                    <span class="conf-pct high">98%</span>
+                  </div>
+                  <div class="conf-row">
+                    <span class="conf-page">p.2</span>
+                    <div class="conf-bar-wrap"><div class="conf-bar-fill high" style="width:96%"></div></div>
+                    <span class="conf-pct high">96%</span>
+                  </div>
+                  <div class="conf-row">
+                    <span class="conf-page">p.3</span>
+                    <div class="conf-bar-wrap"><div class="conf-bar-fill med" style="width:78%"></div></div>
+                    <span class="conf-pct med">78%</span>
+                  </div>
+                  <div class="conf-row">
+                    <span class="conf-page">p.4</span>
+                    <div class="conf-bar-wrap"><div class="conf-bar-fill high" style="width:94%"></div></div>
+                    <span class="conf-pct high">94%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div class="section-title" style="margin-bottom:6px">Extracted text preview — p.4</div>
+                <div class="ocr-text-preview">
+                  SCHEDULE B — INCOME SUMMARY<br><br>
+                  Wages, salaries, tips, <em>etc</em>. (Form W-2, box 1) ........... $84,200.00<br>
+                  Taxable interest (Schedule B, line 4) ........................... $312.44<br>
+                  Ordinary dividends (Schedule B, line 6) ......................... $1,045.00<br>
+                  Business income or <em>(loss)</em> (Schedule C, line 31) ........... $12,800.00<br>
+                  Capital gain or <em>(loss)</em> (Schedule D, line 16) ............... $2,150.00<br>
+                  <br>
+                  Total income .................................................... $100,507.44
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Drop zone -->
+        <div class="drop-zone">
+          <div class="drop-icon">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 13V4M6 8l4-4 4 4"/>
+              <path d="M3 15h14a1 1 0 001-1v-1H2v1a1 1 0 001 1z"/>
+            </svg>
+          </div>
+          <div class="drop-title">Drop more files here</div>
+          <div class="drop-sub">PDF · PNG · JPG · TIFF · up to 500 MB each</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- RIGHT SIDEBAR -->
+    <div class="sidebar-right">
+      <div class="right-tabs">
+        <button class="right-tab active">Export</button>
+        <button class="right-tab">Claude AI</button>
+        <button class="right-tab">History</button>
+      </div>
+
+      <div class="right-content">
+
+        <!-- Export formats -->
+        <div class="export-section">
+          <div class="section-title">Output format</div>
+          <div class="format-options">
+
+            <div class="format-option">
+              <div class="format-option-left">
+                <div class="format-icon pdf">PDF</div>
+                <div>
+                  <div class="format-name">Searchable PDF</div>
+                  <div class="format-desc">text layer embedded</div>
+                </div>
+              </div>
+              <span class="format-tier free">Free</span>
+            </div>
+
+            <div class="format-option selected">
+              <div class="format-option-left">
+                <div class="format-icon docx">DOCX</div>
+                <div>
+                  <div class="format-name">Word Document</div>
+                  <div class="format-desc">editable with formatting</div>
+                </div>
+              </div>
+              <span class="format-tier standard">Standard</span>
+            </div>
+
+            <div class="format-option">
+              <div class="format-option-left">
+                <div class="format-icon txt">TXT</div>
+                <div>
+                  <div class="format-name">Plain Text</div>
+                  <div class="format-desc">clean extracted text</div>
+                </div>
+              </div>
+              <span class="format-tier free">Free</span>
+            </div>
+
+            <div class="format-option" style="opacity:0.5; pointer-events:none;">
+              <div class="format-option-left">
+                <div class="format-icon csv">CSV</div>
+                <div>
+                  <div class="format-name">CSV (tables only)</div>
+                  <div class="format-desc">structured table data</div>
+                </div>
+              </div>
+              <span class="format-tier locked">Premium</span>
+            </div>
+
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom:6px">Save location</div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <div style="flex:1;background:#fff;border:1px solid var(--paper-3);border-radius:var(--radius);padding:7px 10px;font-family:var(--mono);font-size:11px;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              ~/Documents/DocuLift/
+            </div>
+            <button class="toolbar-btn" style="flex-shrink:0;padding:7px 10px;">
+              Change
+            </button>
+          </div>
+        </div>
+
+        <button class="export-btn">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V2M4 6l3 3 3-3"/><path d="M2 11h10"/></svg>
+          Export as DOCX
+        </button>
+
+        <!-- Divider -->
+        <div style="height:1px;background:var(--paper-3);"></div>
+
+        <!-- Claude AI section teaser -->
+        <div class="claude-section">
+          <div class="claude-header">
+            <div class="claude-badge">
+              <div class="claude-icon">C</div>
+              Claude Sonnet
+            </div>
+            <span class="claude-tokens">31 / 200 req used</span>
+          </div>
+
+          <div class="claude-summary-box">
+            <div class="claude-summary-text">
+              This document appears to be a 2023 federal tax return for an individual with total income of $100,507. It includes W-2 wages, investment income, and self-employment income. Page 3 had lower OCR confidence — the handwritten annotation in the margin may have caused errors.<div class="claude-typing-cursor"></div>
+            </div>
+          </div>
+
+          <div class="token-usage-row">
+            <span class="token-label">Tokens used this doc</span>
+            <div class="token-bar-wrap">
+              <div class="token-bar-fill" style="width:18%"></div>
+            </div>
+            <span class="token-label">~420</span>
+          </div>
+
+          <div class="claude-actions">
+            <button class="claude-action-btn">
+              <svg viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1.5" y="1.5" width="10" height="10" rx="1.5"/><line x1="4" y1="4.5" x2="9" y2="4.5"/><line x1="4" y1="6.5" x2="9" y2="6.5"/><line x1="4" y1="8.5" x2="7" y2="8.5"/></svg>
+              Extract key data fields
+              <span class="action-tier">Standard</span>
+            </button>
+            <button class="claude-action-btn">
+              <svg viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="5"/><line x1="6.5" y1="4" x2="6.5" y2="6.5"/><circle cx="6.5" cy="8.5" r="0.4" fill="currentColor"/></svg>
+              Explain document in plain language
+              <span class="action-tier">Standard</span>
+            </button>
+            <button class="claude-action-btn" style="opacity:0.5;">
+              <svg viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="4" height="4" rx="0.5"/><rect x="7" y="2" width="4" height="4" rx="0.5"/><rect x="2" y="7" width="4" height="4" rx="0.5"/><rect x="7" y="7" width="4" height="4" rx="0.5"/></svg>
+              Extract tables to CSV
+              <span class="action-tier">Premium</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="statusbar">
+    <div class="statusbar-left">
+      <div class="status-item">
+        <div class="status-item-dot amber"></div>
+        Processing tax_records_23.pdf
+      </div>
+      <div class="status-item">
+        <div class="status-item-dot green"></div>
+        contract_2026.pdf — ready to export
+      </div>
+    </div>
+    <div class="status-item">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--chrome-4);">v0.1.0-beta · Rust 1.79 · Tesseract 5.3</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- TOAST -->
+<div class="toast">
+  <div class="toast-icon">
+    <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,5 4,7.5 8,3"/></svg>
+  </div>
+  <div>
+    <div style="font-weight:600;">contract_2026.pdf — complete</div>
+    <div class="toast-detail">14 pages · avg 97.2% confidence · ready to export</div>
+  </div>
+</div>
+
+</body>
+</html>

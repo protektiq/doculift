@@ -1,0 +1,46 @@
+[package]
+name = "doculift"
+version = "0.1.0"
+description = "DocuLift — local-first document OCR"
+authors = ["DocuLift"]
+edition = "2021"
+default-run = "doculift"
+
+[lib]
+name = "doculift_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "generate_sample_typed"
+path = "../tests/integration/generate_sample_typed.rs"
+
+[[bin]]
+name = "generate_sample_typed_pdf"
+path = "../tests/integration/generate_sample_typed_pdf.rs"
+
+[[test]]
+name = "ocr_test"
+path = "../tests/integration/ocr_test.rs"
+
+[[test]]
+name = "pdf_test"
+path = "../tests/integration/pdf_test.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+ab_glyph = "0.2"
+image = "0.25"
+imageproc = "0.25"
+leptess = "=0.14.0"
+lopdf = { version = "0.42", features = ["embed_image"] }
+pdfium-auto = "0.3"
+pdfium-render = "0.8.37"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+thiserror = "1"
+
+[dev-dependencies]
+image = "0.25"

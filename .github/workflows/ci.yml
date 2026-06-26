@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable via rustup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry, cargo git, and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install Node.js 20 via actions/setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install system dependencies for leptess on Ubuntu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libleptonica-dev \
+            libtesseract-dev \
+            tesseract-ocr \
+            clang \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            libssl-dev \
+            tesseract-ocr-eng \
+            fonts-dejavu-core
+
+      - name: Run cargo fmt --check
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: Run cargo clippy -- -D warnings
+        working-directory: src-tauri
+        run: cargo clippy -- -D warnings
+
+      - name: Run cargo test
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Run npm ci
+        run: npm ci
+
+      - name: Run npm run build
+        run: npm run build
+
+      - name: Run npx tsc --noEmit
+        run: npx tsc --noEmit
