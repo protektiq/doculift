@@ -167,6 +167,11 @@ mod tests {
     #[test]
     fn temp_png_files_are_removed_on_drop() {
         let pdf_path = fixture_pdf();
+        assert!(
+            pdf_path.is_file(),
+            "missing fixture at {}; run `cargo run --bin generate_sample_typed_pdf` from src-tauri/",
+            pdf_path.display()
+        );
         let path_str = pdf_path.to_str().expect("fixture path must be valid UTF-8");
 
         let temp_paths: Vec<PathBuf> = {

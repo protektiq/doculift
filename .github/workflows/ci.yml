@@ -56,6 +56,17 @@ jobs:
             tesseract-ocr-eng \
             fonts-dejavu-core
 
+      - name: Install pdfium
+        run: |
+          PDFIUM_TAG=$(curl -fsSL https://api.github.com/repos/bblanchon/pdfium-binaries/releases/latest \
+            | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": "\(.*\)".*/\1/' | sed 's|/|%2F|g')
+          curl -fsSL \
+            "https://github.com/bblanchon/pdfium-binaries/releases/download/${PDFIUM_TAG}/pdfium-linux-x64.tgz" \
+            -o /tmp/pdfium.tgz
+          tar -xzf /tmp/pdfium.tgz -C /tmp
+          sudo cp /tmp/lib/libpdfium.so /usr/local/lib/
+          sudo ldconfig
+
       - name: Run cargo fmt --check
         working-directory: src-tauri
         run: cargo fmt --check
