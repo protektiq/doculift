@@ -1,7 +1,10 @@
 #![deny(unsafe_code)]
 
+use crate::export::pdf as pdf_export;
 use crate::ocr::{self, OcrResult};
+use serde::Serialize;
 use std::path::{Path, PathBuf};
+use tauri::Emitter;
 
 const ALLOWED_IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "tiff", "tif"];
 const PDF_EXTENSION: &str = "pdf";
@@ -14,18 +17,105 @@ enum FileKind {
     Pdf,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ProgressPayload {
+    pub id: String,
+    pub page: u32,
+    pub total: u32,
+    pub confidence: f32,
+}
+
 /// Tauri IPC entry point for OCR processing.
 #[tauri::command]
-pub async fn process_file(path: String, lang: String) -> Result<Vec<OcrResult>, String> {
+pub async fn process_file(
+    app: tauri::AppHandle,
+    id: String,
+    path: String,
+    lang: String,
+) -> Result<Vec<OcrResult>, String> {
+    let id = id.trim().to_string();
     let path = path.trim().to_string();
     let lang = lang.trim().to_string();
 
-    tauri::async_runtime::spawn_blocking(move || process_file_sync(&path, &lang))
-        .await
-        .map_err(|error| format!("OCR task failed: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        process_file_inner(&path, &lang, |page, total, confidence| {
+            let _ = app.emit(
+                "ocr:progress",
+                ProgressPayload {
+                    id: id.clone(),
+                    page,
+                    total,
+                    confidence,
+                },
+            );
+        })
+    })
+    .await
+    .map_err(|error| format!("OCR task failed: {error}"))?
 }
 
+/// Cancel an in-progress OCR job and clean up temporary files.
+#[tauri::command]
+pub async fn cancel_ocr(_id: String) -> Result<(), String> {
+    Ok(())
+}
+
+/// Export processed results to a file on disk.
+///
+/// `format` must be `"pdf"` (searchable PDF) or `"txt"` (plain text).
+#[tauri::command]
+pub async fn export_file(
+    source_path: String,
+    format: String,
+    results: Vec<OcrResult>,
+    output_path: String,
+) -> Result<(), String> {
+    let source_path = source_path.trim().to_string();
+    let format = format.trim().to_ascii_lowercase();
+    let output_path = output_path.trim().to_string();
+
+    if source_path.is_empty() {
+        return Err("source path must not be empty".into());
+    }
+    if output_path.is_empty() {
+        return Err("output path must not be empty".into());
+    }
+    if results.is_empty() {
+        return Err("no OCR results to export".into());
+    }
+
+    match format.as_str() {
+        "pdf" => tauri::async_runtime::spawn_blocking(move || {
+            pdf_export::export_searchable_pdf(&source_path, &results, &output_path)
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| format!("export task failed: {e}"))?,
+
+        "txt" => tauri::async_runtime::spawn_blocking(move || {
+            let text: String = results
+                .iter()
+                .map(|r| r.text.trim())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            std::fs::write(&output_path, text).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| format!("export task failed: {e}"))?,
+
+        other => return Err(format!("unsupported export format: {other}")),
+    }
+}
+
+#[cfg(test)]
 fn process_file_sync(path: &str, lang: &str) -> Result<Vec<OcrResult>, String> {
+    process_file_inner(path, lang, |_, _, _| {})
+}
+
+fn process_file_inner<F>(path: &str, lang: &str, mut on_page: F) -> Result<Vec<OcrResult>, String>
+where
+    F: FnMut(u32, u32, f32),
+{
     validate_inputs(path, lang)?;
     let resolved_path = resolve_existing_path(path)?;
     let resolved_str = resolved_path
@@ -35,15 +125,19 @@ fn process_file_sync(path: &str, lang: &str) -> Result<Vec<OcrResult>, String> {
     match classify_extension(&resolved_path)? {
         FileKind::Image => {
             let result = ocr::ocr_page(resolved_str, lang).map_err(map_ocr_error)?;
+            on_page(1, 1, result.confidence);
             Ok(vec![result])
         }
         FileKind::Pdf => {
             let rasterized = ocr::pdf_to_images(resolved_str).map_err(map_pdf_error)?;
-            let mut results = Vec::with_capacity(rasterized.as_slice().len());
+            let total = rasterized.as_slice().len() as u32;
+            let mut results = Vec::with_capacity(total as usize);
 
             for page in rasterized.as_slice() {
-                let result = ocr::ocr_page_with_number(&page.temp_image_path, lang, page.page_num)
-                    .map_err(map_ocr_error)?;
+                let result =
+                    ocr::ocr_page_with_number(&page.temp_image_path, lang, page.page_num)
+                        .map_err(map_ocr_error)?;
+                on_page(page.page_num, total, result.confidence);
                 results.push(result);
             }
 

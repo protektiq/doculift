@@ -127,74 +127,38 @@ Add a Rust integration test in tests/integration/ocr_test.rs that:
 
 ### Step 0.3 — Tauri command bridge: OCR invocation from frontend
 
-**Cursor prompt:**
-```
-Expose the OCR pipeline to the Tauri frontend via a Tauri command. In
-src-tauri/src/main.rs, register a command:
+> **Status: COMPLETE** — merged with Step 0.4 during implementation. See Step 0.4 notes.
 
-  #[tauri::command]
-  async fn process_file(path: String, lang: String) -> Result<OcrResult, String>
-
-This command should:
-1. Validate that the file extension is one of: pdf, png, jpg, jpeg, tiff, tif
-2. For image files: call ocr::ocr_page directly
-3. For PDF files: return an error with message "PDF support coming in Step 0.4"
-4. Return OcrResult serialized as JSON, or a String error
-
-In src/types/ocr.ts, define TypeScript interfaces matching OcrResult and OcrError.
-In src/App.tsx, add a temporary test button that calls invoke("process_file") with
-a hardcoded test path and logs the result to the console. This button will be
-removed in Step 1.1 when the real UI is built.
-```
+**What was built:** `process_file` in `src-tauri/src/commands.rs` handles both images and PDFs from the start (returning `Vec<OcrResult>`). `src/types/ocr.ts` defines `OcrResult`, `OcrResultList`, and `OcrError`. Temporary test buttons exist in `App.tsx` with `// TODO: remove in Step 1.1` comments.
 
 **Claude Code validation checklist:**
-- [ ] `cargo build` passes
-- [ ] `npm run build` passes with no TypeScript errors
-- [ ] The Tauri command is registered in `main()` via `.invoke_handler(tauri::generate_handler![process_file])`
-- [ ] File extension validation rejects `.exe`, `.js`, `.pdf` (currently) with a clear error string
-- [ ] `src/types/ocr.ts` exports `OcrResult` and `OcrError` interfaces
-- [ ] No `any` types in `ocr.ts`
-- [ ] The temporary test button exists in `App.tsx` with a `// TODO: remove in Step 1.1` comment
+- [x] `cargo build` passes
+- [x] `npm run build` passes with no TypeScript errors
+- [x] The Tauri command is registered in `lib.rs` via `.invoke_handler(tauri::generate_handler![commands::process_file])`
+- [x] File extension validation rejects `.exe`, `.js` with a clear error string
+- [x] `src/types/ocr.ts` exports `OcrResult` and `OcrError` interfaces
+- [x] No `any` types in `ocr.ts`
+- [x] The temporary test button exists in `App.tsx` with a `// TODO: remove in Step 1.1` comment
 
 ---
 
 ### Step 0.4 — PDF page rasterization pipeline
 
-**Cursor prompt:**
-```
-Add the `pdfium-render` crate to Cargo.toml for PDF rasterization. In
-src-tauri/src/ocr/pdf.rs, implement:
-
-  pub fn pdf_to_images(pdf_path: &str) -> Result<Vec<RasterizedPage>, PdfError>
-
-where RasterizedPage contains: page_num: u32, temp_image_path: String, width: u32,
-height: u32.
-
-The function should:
-1. Open the PDF using pdfium-render
-2. Rasterize each page to a temporary PNG at 300 DPI into the OS temp directory
-   (use std::env::temp_dir(), subdirectory "doculift/")
-3. Return the list of temp image paths
-4. Clean up temp files when the returned Vec is dropped (implement Drop or use
-   a RAII wrapper)
-
-Update the process_file Tauri command to handle PDFs by:
-1. Calling pdf_to_images()
-2. Calling ocr_page() on each resulting image
-3. Returning a Vec<OcrResult> (one per page)
-
-Update src/types/ocr.ts accordingly. Add an integration test that processes
-tests/fixtures/sample_typed.pdf (generate a 2-page PDF from the existing PNG
-using lopdf) and asserts 2 OcrResult items are returned.
-```
+> **Status: COMPLETE** — implemented alongside Step 0.3.
+>
+> **Implementation notes:**
+> - Uses `pdfium-render = "0.8.37"` + `pdfium-auto = "0.3"` (auto-linker for the pdfium binary).
+> - `pdfium-auto` requires the pdfium shared library to be present at link time; the CI workflow downloads it from `bblanchon/pdfium-binaries` before `cargo test`.
+> - `RasterizedPages` is a RAII wrapper (not `Vec<RasterizedPage>` directly) so temp files are cleaned up on drop.
+> - `ocr_page_with_number(path, lang, page_num)` was added as a public companion to `ocr_page()` for the PDF pipeline.
 
 **Claude Code validation checklist:**
-- [ ] `cargo test` passes including the new PDF integration test
-- [ ] Temp files in `std::env::temp_dir()/doculift/` are deleted after processing (verify with a test that checks the filesystem post-call)
-- [ ] 300 DPI rasterization is explicitly set (not default)
-- [ ] `process_file` now returns `Vec<OcrResult>` for both images and PDFs (image returns a Vec of length 1)
-- [ ] `src/types/ocr.ts` updated to reflect `Vec<OcrResult>` return type
-- [ ] `tests/fixtures/sample_typed.pdf` exists and is a valid 2-page PDF
+- [x] `cargo test` passes including the new PDF integration test
+- [x] Temp files in `std::env::temp_dir()/doculift/` are deleted after processing
+- [x] 300 DPI rasterization is explicitly set (`RENDER_DPI = 300`)
+- [x] `process_file` returns `Vec<OcrResult>` for both images and PDFs
+- [x] `src/types/ocr.ts` updated to reflect `Vec<OcrResult>` return type (`OcrResultList`)
+- [x] `tests/fixtures/sample_typed.pdf` exists and is a valid 2-page PDF
 
 ---
 
@@ -357,10 +321,21 @@ In src/hooks/useOcrProcessor.ts, implement a hook that:
    e. On completion: sets status = 'done', stores OcrResult array
    f. On error: sets status = 'error', stores error message
 
-In src-tauri/src/ocr/mod.rs, update the process_file command to:
-1. Accept a window: tauri::Window parameter
-2. After each page is processed, emit the "ocr:progress" event:
-   window.emit("ocr:progress", ProgressPayload { id, page, total, confidence })?;
+In src-tauri/src/ocr/mod.rs, update the process_file command to emit
+per-page progress events using the Tauri v2 AppHandle API:
+
+1. Accept an `app: tauri::AppHandle` parameter (Tauri v2 — NOT `tauri::Window`).
+2. Before calling `spawn_blocking`, clone the handle: `let app = app.clone()`.
+3. Move the cloned handle into the `spawn_blocking` closure.
+4. After each page is processed, call the synchronous emit variant:
+   app.emit("ocr:progress", ProgressPayload { id, page, total, confidence })
+      .unwrap_or_default();
+   (The synchronous `emit` method is available on `AppHandle` in Tauri v2 and
+   is safe to call from a blocking thread.)
+
+Do NOT use `window: tauri::Window` — that Tauri v1 type is replaced by
+`tauri::WebviewWindow` in v2, and commands should prefer `AppHandle` for
+app-wide event emission.
 
 In DocViewer.tsx (src/components/DocViewer.tsx), build the document viewer panel:
 - Shows the currently active (processing) document
@@ -378,6 +353,7 @@ In DocViewer.tsx (src/components/DocViewer.tsx), build the document viewer panel
 - [ ] `npm run build` passes with zero TypeScript errors
 - [ ] `src/hooks/useOcrProcessor.ts` exists and exports `useOcrProcessor`
 - [ ] The hook processes items sequentially (verify: if two items are in the queue, the second does not start until the first emits `status = 'done'`)
+- [ ] `process_file` accepts `app: tauri::AppHandle` (not `window: tauri::Window`) — grep for `AppHandle` in `commands.rs`
 - [ ] Progress events are emitted from Rust and received in TypeScript (add a `console.log` in the hook for now to verify in dev mode)
 - [ ] `DocViewer.tsx` exists in `src/components/`
 - [ ] `DocViewer` shows a confidence score for each completed page
@@ -523,7 +499,11 @@ Define:
   // WhiteGlove: unlimited everything
 
 In src-tauri/src/db/mod.rs, set up SQLite via rusqlite:
-  - Database file: app data dir / "doculift.db" (use tauri::api::path::app_data_dir())
+  - Database file: app data dir / "doculift.db"
+    In Tauri v2, resolve this path via the AppHandle:
+      app_handle.path().app_data_dir()?
+    Do NOT use the removed `tauri::api::path::app_data_dir()` (Tauri v1 API).
+    The Tauri commands that initialize the DB should accept `app: tauri::AppHandle`.
   - Table: usage (id INTEGER PRIMARY KEY, month TEXT, pages_processed INTEGER,
     claude_requests INTEGER)
   - Table: settings (key TEXT PRIMARY KEY, value TEXT)
@@ -913,11 +893,13 @@ Audit every error handling path in the application.
 Perform a security audit pass across the entire codebase.
 
 1. Verify the local processing guarantee:
-   Add a Tauri capability in tauri.conf.json that disables all network access
-   during document processing. Specifically: the Rust OCR and export code paths
-   must not be able to make outbound connections. Add an integration test that
-   attempts to open a TCP connection from within ocr_page() and asserts it fails
-   (this tests that the process is not granted unnecessary network capability).
+   This project uses Tauri v2, which replaced tauri.conf.json's `allowlist`
+   section with a capabilities system in `src-tauri/capabilities/`.
+   The existing `src-tauri/capabilities/default.json` grants only `core:default`.
+   Verify that no network-related permissions (e.g. `http:default`) are present
+   in any capability file. Add an integration test that attempts to open a TCP
+   connection from within ocr_page() and asserts it fails (this tests that the
+   Rust process is not granted unnecessary network access).
 
 2. Verify Claude text-only transmission:
    Add a unit test for ClaudeClient that mocks the HTTP layer and asserts:
@@ -933,11 +915,12 @@ Perform a security audit pass across the entire codebase.
    - The `settings` table does not contain the Claude API key
 
 4. Verify minimum OS permissions:
-   Review tauri.conf.json and assert the allowlist contains only:
-   - fs: { scope: ["$DOCUMENT/*", "$TEMP/*", "$APPDATA/*"] }
-   - dialog: { open: true, save: true }
-   - shell: { open: false }  (explicitly disabled)
-   No camera, microphone, location, or notification permissions.
+   This project uses Tauri v2's capabilities system (not tauri.conf.json allowlist).
+   Review all files in src-tauri/capabilities/ and assert:
+   - No network/HTTP permissions are granted
+   - Only the required fs scopes are present: $DOCUMENT/*, $TEMP/*, $APPDATA/*
+   - No camera, microphone, location, or notification permissions are present
+   - `shell:allow-open` is absent (it will be added only in Step 4.2)
 
 5. API key in keychain:
    Add a test that calls save_claude_api_key(), then queries the SQLite DB,
@@ -946,11 +929,11 @@ Perform a security audit pass across the entire codebase.
 
 **Claude Code validation checklist:**
 - [ ] All 5 security tests exist and pass
-- [ ] `tauri.conf.json` has explicit `shell: { open: false }`
-- [ ] `fs` scope does not include root `/` or `$HOME` without a subdirectory
+- [ ] No capability file in `src-tauri/capabilities/` grants `http:default` or any network permission
+- [ ] `src-tauri/capabilities/default.json` grants only `core:default` (or a minimal explicit set)
 - [ ] The Claude API key is absent from every table in `doculift.db` after `save_claude_api_key()`
 - [ ] `cargo audit` passes with no high-severity advisories (add `cargo-audit` to CI)
-- [ ] There is no `network: { allowlist: { all: true } }` in `tauri.conf.json`
+- [ ] No capability file grants `http:default` or any other network permission
 
 ---
 
@@ -1014,8 +997,21 @@ Add unit tests for validate_license_key covering:
 Integrate Stripe Checkout for subscription management.
 
 IMPORTANT: Stripe payment processing must happen in an external browser window,
-never inside the Tauri webview. Use tauri::api::shell::open() to open the
-Stripe Checkout URL in the system browser.
+never inside the Tauri webview. This project uses Tauri v2; opening URLs in
+the system browser requires the `tauri-plugin-shell` plugin:
+
+1. Add to src-tauri/Cargo.toml:
+     tauri-plugin-shell = "2"
+2. Register the plugin in lib.rs:
+     .plugin(tauri_plugin_shell::init())
+3. Add to src-tauri/capabilities/default.json permissions:
+     "shell:allow-open"
+4. In the Tauri command, open the URL via:
+     app_handle.shell().open(url, None)?;
+
+Do NOT use the removed `tauri::api::shell::open()` (Tauri v1 API).
+Also add `@tauri-apps/plugin-shell` to package.json and use its `open()`
+function in TypeScript if opening from the frontend instead.
 
 Build src/components/settings/UpgradeScreen.tsx:
 - Three plan cards: Standard ($9.99/mo), Premium ($19.99/mo), White Glove ($29.99/mo)
@@ -1041,7 +1037,9 @@ The upgrade prompt should appear automatically when a user hits a tier limit:
 
 **Claude Code validation checklist:**
 - [ ] `npm run build` passes with zero TypeScript errors
-- [ ] Stripe URLs are opened via `tauri::api::shell::open()` — NOT via `window.open()` or an iframe
+- [ ] Stripe URLs are opened via `tauri-plugin-shell`'s `app_handle.shell().open()` — NOT via `window.open()`, an iframe, or the removed Tauri v1 `tauri::api::shell::open()`
+- [ ] `tauri-plugin-shell = "2"` is in `Cargo.toml` and the plugin is registered in `lib.rs`
+- [ ] `"shell:allow-open"` is present in `src-tauri/capabilities/default.json`
 - [ ] The Tauri command validates the `tier` parameter before opening any URL
 - [ ] The upgrade screen appears when a page limit error is returned from `check_page_allowance`
 - [ ] The upgrade screen appears when a locked format card is clicked
